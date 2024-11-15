@@ -1,7 +1,9 @@
 name: Upstream Sync
 
+# 更新权限配置
 permissions:
   contents: write
+  workflows: write  # 添加 workflows 权限
 
 on:
   schedule:
@@ -26,10 +28,10 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           
-      - name: Backup workflow files
+      - name: Save current workflow
         run: |
-          mkdir -p .backup
-          cp -r .github/workflows/* .backup/
+          mkdir -p .workflow_backup
+          cp .github/workflows/sync-upstream.yml .workflow_backup/ || true
           
       - name: Add upstream repository
         run: |
@@ -41,14 +43,15 @@ jobs:
           # 尝试合并上游更改
           git merge upstream/main --no-edit || true
           
-          # 不管合并是否成功，都恢复工作流文件
-          cp -rf .backup/* .github/workflows/
+          # 恢复原始工作流文件
+          mkdir -p .github/workflows
+          cp -f .workflow_backup/sync-upstream.yml .github/workflows/ || true
           
-          # 确保工作流文件被追踪
-          git add .github/workflows/
+          # 添加更改
+          git add .
           
           # 提交更改
-          git commit -m "Merge upstream changes and restore workflows" || echo "No changes to commit"
+          git commit -m "Merge upstream changes and restore workflow" || echo "No changes to commit"
           
       - name: Push changes
         run: |
@@ -57,4 +60,4 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          rm -rf .backup
+          rm -rf .workflow_backup
