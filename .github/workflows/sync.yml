@@ -26,54 +26,35 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           
+      - name: Backup workflow files
+        run: |
+          mkdir -p .backup
+          cp -r .github/workflows/* .backup/
+          
       - name: Add upstream repository
         run: |
           git remote add upstream https://github.com/TyCoding/langchat.git
-          git remote set-url upstream https://github.com/TyCoding/langchat.git || true
-          
-      - name: Fetch upstream
-        run: |
           git fetch upstream main
-          
-      - name: Create backup hash
-        run: |
-          mkdir -p .backup
-          cp -r .github/workflows .backup/
-          # 创建工作流文件的哈希值用于后续验证
-          find .github/workflows -type f -exec sha256sum {} \; > .backup/workflows.hash
           
       - name: Merge upstream
         run: |
-          git merge -X theirs upstream/main --no-edit || true
+          # 尝试合并上游更改
+          git merge upstream/main --no-edit || true
           
-          # 恢复工作流文件
-          cp -rf .backup/workflows/* .github/workflows/
+          # 不管合并是否成功，都恢复工作流文件
+          cp -rf .backup/* .github/workflows/
           
-          # 验证工作流文件是否保持不变
-          find .github/workflows -type f -exec sha256sum {} \; > .backup/workflows.new.hash
-          if ! cmp -s .backup/workflows.hash .backup/workflows.new.hash; then
-            echo "Warning: Workflow files were modified during sync"
-            cp -rf .backup/workflows/* .github/workflows/  # 再次恢复以确保安全
-          fi
-          
-          # 添加所有更改
-          git add .
+          # 确保工作流文件被追踪
+          git add .github/workflows/
           
           # 提交更改
-          git commit -m "Merge upstream changes and preserve workflows" || echo "No changes to commit"
+          git commit -m "Merge upstream changes and restore workflows" || echo "No changes to commit"
           
       - name: Push changes
         run: |
           git push origin main
-          
+        
       - name: Cleanup
+        if: always()
         run: |
           rm -rf .backup
-          
-      - name: Verify workflows
-        run: |
-          find .github/workflows -type f -exec sha256sum {} \; > workflows.current.hash
-          if ! cmp -s .backup/workflows.hash workflows.current.hash; then
-            echo "::error::Workflow files were modified during the sync process"
-            exit 1
-          fi
