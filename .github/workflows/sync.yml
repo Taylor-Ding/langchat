@@ -35,34 +35,32 @@ jobs:
         run: |
           git fetch upstream main
           
-      - name: Backup local files
+      - name: Create backup hash
         run: |
           mkdir -p .backup
-          # 备份可能发生冲突的文件
-          cp -f langchat-server/src/main/resources/application-dev.yml .backup/ || true
-          cp -f langchat-ui/pnpm-lock.yaml .backup/ || true
-          cp -r .github/workflows .backup/ || true
+          cp -r .github/workflows .backup/
+          # 创建工作流文件的哈希值用于后续验证
+          find .github/workflows -type f -exec sha256sum {} \; > .backup/workflows.hash
           
       - name: Merge upstream
         run: |
-          # 使用 ours 策略进行合并，保留上游的更改
           git merge -X theirs upstream/main --no-edit || true
           
-          # 恢复本地文件（如果需要）
-          if [ -f .backup/application-dev.yml ]; then
-            cp -f .backup/application-dev.yml langchat-server/src/main/resources/
-          fi
-          
           # 恢复工作流文件
-          if [ -d .backup/workflows ]; then
-            cp -rf .backup/workflows/* .github/workflows/
+          cp -rf .backup/workflows/* .github/workflows/
+          
+          # 验证工作流文件是否保持不变
+          find .github/workflows -type f -exec sha256sum {} \; > .backup/workflows.new.hash
+          if ! cmp -s .backup/workflows.hash .backup/workflows.new.hash; then
+            echo "Warning: Workflow files were modified during sync"
+            cp -rf .backup/workflows/* .github/workflows/  # 再次恢复以确保安全
           fi
           
           # 添加所有更改
           git add .
           
           # 提交更改
-          git commit -m "Merge upstream changes and resolve conflicts" || echo "No changes to commit"
+          git commit -m "Merge upstream changes and preserve workflows" || echo "No changes to commit"
           
       - name: Push changes
         run: |
@@ -72,12 +70,10 @@ jobs:
         run: |
           rm -rf .backup
           
-      - name: Check for conflicts
-        if: failure()
+      - name: Verify workflows
         run: |
-          echo "::warning::Sync encountered conflicts. Some files may need manual review:"
-          git status
-          # 不立即退出，让用户知道具体哪些文件需要处理
-          echo "You may need to manually sync the following files:"
-          echo "- langchat-server/src/main/resources/application-dev.yml"
-          echo "- langchat-ui/pnpm-lock.yaml"
+          find .github/workflows -type f -exec sha256sum {} \; > workflows.current.hash
+          if ! cmp -s .backup/workflows.hash workflows.current.hash; then
+            echo "::error::Workflow files were modified during the sync process"
+            exit 1
+          fi
